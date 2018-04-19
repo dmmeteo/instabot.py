@@ -97,3 +97,6 @@ ENV/
 # IDEs
 .idea/
 *.iml
+
+# run script
+run.py

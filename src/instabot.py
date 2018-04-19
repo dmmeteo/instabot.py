@@ -160,7 +160,7 @@ class InstaBot:
         self.follows_db_c = self.follows_db.cursor()
         check_and_update(self)
         fake_ua = UserAgent()
-        self.user_agent = check_and_insert_user_agent(self, str(fake_ua.random))
+        self.user_agent = check_and_insert_user_agent(self, str(fake_ua.google))
         self.bot_start = datetime.datetime.now()
         self.start_at_h = start_at_h
         self.start_at_m = start_at_m
@@ -291,6 +291,28 @@ class InstaBot:
         self.s.cookies['ig_vh'] = '772'
         self.s.cookies['ig_or'] = 'landscape-primary'
         time.sleep(5 * random.random())
+
+        if login.status_code == 400:
+            self.write_log('Challenge!')
+            data = json.loads(login.text)
+            # send security_code
+            self.s.post(
+                'https://www.instagram.com'+data.get('checkpoint_url'),
+                data={'choice': 1},
+                allow_redirects=True
+            )
+            # get security_code form user
+            if sys.version_info[0] == 3:
+                raw_input = input
+            security_code = raw_input('Enter security_code: ')
+            challange = self.s.post(
+                'https://www.instagram.com'+data.get('checkpoint_url'),
+                data={'security_code': security_code},
+                allow_redirects=True
+            )
+
+            if challange.status_code == 200:
+                login = challange
 
         if login.status_code == 200:
             r = self.s.get('https://www.instagram.com/')
@@ -565,6 +587,15 @@ class InstaBot:
         """ Send http request to like media by ID """
         if self.login_status:
             url_likes = self.url_likes % (media_id)
+            # cookie to string
+            cookie_string = "; ".join([str(x)+"="+str(y) for x,y in self.s.cookies.items()])
+            self.s.headers.update({
+                'pragma': 'no-cache',
+                "cookies": cookie_string,
+                'x-csrftoken': self.s.cookies['csrftoken'],
+                'x-instagram-ajax': '1',
+                'x-requested-with': 'XMLHttpRequest'
+            })
             try:
                 like = self.s.post(url_likes)
                 last_liked_media_id = media_id
