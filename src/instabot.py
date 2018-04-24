@@ -4,6 +4,8 @@
 from __future__ import print_function
 from .unfollow_protocol import unfollow_protocol
 from .userinfo import UserInfo
+import re
+import hashlib
 import atexit
 import datetime
 import itertools
@@ -117,6 +119,9 @@ class InstaBot:
 
     # For new_auto_mod
     next_iteration = {"Like": 0, "Follow": 0, "Unfollow": 0, "Comments": 0}
+
+    # For user info requests
+    rhx_gis = ''
 
     def __init__(self,
                  login,
@@ -255,6 +260,14 @@ class InstaBot:
                 self.write_log(log_string)
                 time.sleep(5 * random.random())
 
+    def get_x_instagram_gis(self, username):
+        if self.rhx_gis:
+            gis = '{rhx_gis}:/{username}/'.format(rhx_gis=self.rhx_gis, username=username)
+            return hashlib.md5(gis.encode('utf-8')).hexdigest()
+        else:
+            log_string = '"rhx_gis" is None'
+            self.write_log(log_string)
+
     def login(self):
         log_string = 'Trying to login as %s...\n' % (self.user_login)
         self.write_log(log_string)
@@ -279,10 +292,15 @@ class InstaBot:
         })
 
         r = self.s.get(self.url)
-        self.s.headers.update({'X-CSRFToken': r.cookies['csrftoken']})
+        rhx_gis = re.search(r'"rhx_gis":"(?P<rhx_gis>[a-f0-9]{32})"', r.text, re.MULTILINE)
+        self.rhx_gis = rhx_gis.group('rhx_gis')
+        self.s.headers.update({
+            'X-CSRFToken': r.cookies['csrftoken'],
+            'x-instagram-gis': self.get_x_instagram_gis(self.user_login)
+        })
+
         time.sleep(5 * random.random())
-        login = self.s.post(
-            self.url_login, data=self.login_post, allow_redirects=True)
+        login = self.s.post(self.url_login, data=self.login_post, allow_redirects=True)
         self.s.headers.update({'X-CSRFToken': login.cookies['csrftoken']})
         self.csrftoken = login.cookies['csrftoken']
         #ig_vw=1536; ig_pr=1.25; ig_vh=772;  ig_or=landscape-primary;
@@ -591,7 +609,7 @@ class InstaBot:
             cookie_string = "; ".join([str(x)+"="+str(y) for x,y in self.s.cookies.items()])
             self.s.headers.update({
                 'pragma': 'no-cache',
-                "cookies": cookie_string,
+                'cookies': cookie_string,
                 'x-csrftoken': self.s.cookies['csrftoken'],
                 'x-instagram-ajax': '1',
                 'x-requested-with': 'XMLHttpRequest'
@@ -873,6 +891,7 @@ class InstaBot:
             if self.login_status == 1:
                 url_tag = self.url_user_detail % (current_user)
                 try:
+                    self.s.headers.update({'x-instagram-gis': self.get_x_instagram_gis(current_user)})
                     r = self.s.get(url_tag)
                     all_data = json.loads(r.text)
 
@@ -885,12 +904,9 @@ class InstaBot:
                     follower = user_info['edge_followed_by']['count']
                     media = user_info['edge_owner_to_timeline_media']['count']
                     follow_viewer = user_info['follows_viewer']
-                    followed_by_viewer = user_info[
-                        'followed_by_viewer']
-                    requested_by_viewer = user_info[
-                        'requested_by_viewer']
-                    has_requested_viewer = user_info[
-                        'has_requested_viewer']
+                    followed_by_viewer = user_info['followed_by_viewer']
+                    requested_by_viewer = user_info['requested_by_viewer']
+                    has_requested_viewer = user_info['has_requested_viewer']
                     log_string = "Follower : %i" % (follower)
                     self.write_log(log_string)
                     log_string = "Following : %s" % (follows)
@@ -933,7 +949,9 @@ class InstaBot:
                         print('   >>>You are NOT following this account')
 
                 except:
-                    logging.exception("Except on auto_unfollow!")
+                    log_string = "Except on auto_unfollow!"
+                    self.write_log(log_string)
+                    logging.exception(log_string)
                     time.sleep(3)
                     return False
             else:
